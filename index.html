@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AR 魔法融合 - 最終完成版</title>
+    <title>AR 魔法融合 - 修復版</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
     
@@ -14,56 +14,78 @@
           this.fireContent = document.querySelector('#content-fire');
           this.waterContent = document.querySelector('#content-water');
           this.steamContent = document.querySelector('#content-steam');
+          this.debugText = document.querySelector('#debug-text'); // 抓取文字框
 
           this.fireVisible = false;
           this.waterVisible = false;
 
-          // 監聽火卡片
-          this.fireTarget.addEventListener("targetFound", () => { this.fireVisible = true; });
-          this.fireTarget.addEventListener("targetLost", () => { this.fireVisible = false; });
+          // 綁定事件
+          this.fireTarget.addEventListener("targetFound", () => { 
+            this.fireVisible = true; 
+            this.updateDebugText("找到火卡片");
+          });
+          this.fireTarget.addEventListener("targetLost", () => { 
+            this.fireVisible = false; 
+            this.resetDisplay();
+            this.updateDebugText("火卡片消失");
+          });
           
-          // 監聽水卡片
-          this.waterTarget.addEventListener("targetFound", () => { this.waterVisible = true; });
-          this.waterTarget.addEventListener("targetLost", () => { this.waterVisible = false; });
+          this.waterTarget.addEventListener("targetFound", () => { 
+            this.waterVisible = true; 
+            this.updateDebugText("找到水卡片");
+          });
+          this.waterTarget.addEventListener("targetLost", () => { 
+            this.waterVisible = false; 
+            this.resetDisplay();
+            this.updateDebugText("水卡片消失");
+          });
         },
 
         tick: function() {
+          // 只有當兩張卡片「同時」存在時才計算
           if (this.fireVisible && this.waterVisible) {
-            // 1. 取得兩張卡片位置
             const firePos = new THREE.Vector3();
             const waterPos = new THREE.Vector3();
+            
             this.fireTarget.object3D.getWorldPosition(firePos);
             this.waterTarget.object3D.getWorldPosition(waterPos);
 
-            // 2. 計算距離
             const distance = firePos.distanceTo(waterPos);
 
-            // 3. 距離判斷 (小於 0.5 觸發)
-            if (distance < 0.5) {
+            // 即時更新螢幕上的距離數值
+            this.updateDebugText("距離: " + distance.toFixed(2));
+
+            // 放寬判定標準：原本是 0.5，現在改 0.8 (更容易觸發)
+            if (distance < 0.8) {
               this.fireContent.setAttribute('visible', false);
               this.waterContent.setAttribute('visible', false);
               
               this.steamContent.setAttribute('visible', true);
-
-              // 4. 計算中點並移動蒸氣
+              
+              // 計算中點
               const midPos = new THREE.Vector3().addVectors(firePos, waterPos).multiplyScalar(0.5);
               this.steamContent.object3D.position.copy(midPos);
-              
-              // 讓魔法煙霧旋轉
-              this.steamContent.object3D.rotation.z += 0.02; 
-              
+              this.steamContent.object3D.rotation.z += 0.05; 
             } else {
-              this.resetDisplay();
+              // 距離不夠近，顯示原本的圖
+              this.fireContent.setAttribute('visible', true);
+              this.waterContent.setAttribute('visible', true);
+              this.steamContent.setAttribute('visible', false);
             }
-          } else {
-            this.resetDisplay();
           }
         },
 
         resetDisplay: function() {
+          // 只要有一張卡片消失，就恢復原狀
           this.fireContent.setAttribute('visible', true);
           this.waterContent.setAttribute('visible', true);
           this.steamContent.setAttribute('visible', false);
+        },
+
+        updateDebugText: function(msg) {
+          if (this.debugText) {
+            this.debugText.setAttribute('value', msg);
+          }
         }
       });
     </script>
@@ -76,24 +98,29 @@
              device-orientation-permission-ui="enabled: false">
       
       <a-assets>
-        <img id="icon-fire" src="https://cdn-icons-png.flaticon.com/512/426/426833.png" />
-        <img id="icon-water" src="https://cdn-icons-png.flaticon.com/512/326/326774.png" />
-        <img id="icon-steam" src="https://cdn-icons-png.flaticon.com/512/1167/1167069.png" />
+        <img id="icon-fire" src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Fire_Icon.svg/1024px-Fire_Icon.svg.png" />
+        <img id="icon-water" src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1c/Water_drop_icon.svg/1024px-Water_drop_icon.svg.png" />
+        <img id="icon-steam" src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/Cloud_icon.svg/1024px-Cloud_icon.svg.png" />
       </a-assets>
 
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
+      <a-entity id="debug-text" 
+                position="0 1.2 -1.5" 
+                text="value: Waiting...; color: red; align: center; width: 4; background: white">
+      </a-entity>
+
       <a-entity fusion-logic></a-entity>
 
       <a-entity id="target-fire" mindar-image-target="targetIndex: 0">
-        <a-image id="content-fire" src="#icon-fire" position="0 0 0" height="0.6" width="0.6" animation="property: scale; to: 0.7 0.7 0.7; dir: alternate; loop: true; dur: 500"></a-image>
+        <a-image id="content-fire" src="#icon-fire" position="0 0 0" height="0.6" width="0.6"></a-image>
       </a-entity>
 
       <a-entity id="target-water" mindar-image-target="targetIndex: 1">
-        <a-image id="content-water" src="#icon-water" position="0 0 0" height="0.6" width="0.6" animation="property: position; to: 0 0.1 0; dir: alternate; loop: true; dur: 1000"></a-image>
+        <a-image id="content-water" src="#icon-water" position="0 0 0" height="0.6" width="0.6"></a-image>
       </a-entity>
 
-      <a-image id="content-steam" src="#icon-steam" visible="false" height="1.2" width="1.2"></a-image>
+      <a-image id="content-steam" src="#icon-steam" visible="false" height="1" width="1"></a-image>
 
     </a-scene>
   </body>
