@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AR 魔法融合 - 修復版</title>
+    <title>AR 魔法融合 - 幾何測試版</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
     
@@ -11,10 +11,13 @@
         init: function() {
           this.fireTarget = document.querySelector('#target-fire');
           this.waterTarget = document.querySelector('#target-water');
-          this.fireContent = document.querySelector('#content-fire');
-          this.waterContent = document.querySelector('#content-water');
-          this.steamContent = document.querySelector('#content-steam');
-          this.debugText = document.querySelector('#debug-text'); // 抓取文字框
+          
+          // 抓取幾何圖形實體
+          this.fireShape = document.querySelector('#shape-fire');
+          this.waterShape = document.querySelector('#shape-water');
+          this.steamShape = document.querySelector('#shape-steam');
+          
+          this.debugText = document.querySelector('#debug-text');
 
           this.fireVisible = false;
           this.waterVisible = false;
@@ -22,27 +25,26 @@
           // 綁定事件
           this.fireTarget.addEventListener("targetFound", () => { 
             this.fireVisible = true; 
-            this.updateDebugText("找到火卡片");
+            this.updateDebugText("發現：火");
           });
           this.fireTarget.addEventListener("targetLost", () => { 
             this.fireVisible = false; 
             this.resetDisplay();
-            this.updateDebugText("火卡片消失");
+            this.updateDebugText("火消失");
           });
           
           this.waterTarget.addEventListener("targetFound", () => { 
             this.waterVisible = true; 
-            this.updateDebugText("找到水卡片");
+            this.updateDebugText("發現：水");
           });
           this.waterTarget.addEventListener("targetLost", () => { 
             this.waterVisible = false; 
             this.resetDisplay();
-            this.updateDebugText("水卡片消失");
+            this.updateDebugText("水消失");
           });
         },
 
         tick: function() {
-          // 只有當兩張卡片「同時」存在時才計算
           if (this.fireVisible && this.waterVisible) {
             const firePos = new THREE.Vector3();
             const waterPos = new THREE.Vector3();
@@ -51,41 +53,39 @@
             this.waterTarget.object3D.getWorldPosition(waterPos);
 
             const distance = firePos.distanceTo(waterPos);
-
-            // 即時更新螢幕上的距離數值
             this.updateDebugText("距離: " + distance.toFixed(2));
 
-            // 放寬判定標準：原本是 0.5，現在改 0.8 (更容易觸發)
+            // 距離判斷
             if (distance < 0.8) {
-              this.fireContent.setAttribute('visible', false);
-              this.waterContent.setAttribute('visible', false);
+              // 隱藏原本的紅色圓和藍色圓
+              this.fireShape.setAttribute('visible', false);
+              this.waterShape.setAttribute('visible', false);
               
-              this.steamContent.setAttribute('visible', true);
+              // 顯示中間的白色球
+              this.steamShape.setAttribute('visible', true);
               
-              // 計算中點
+              // 移動白色球到中間
               const midPos = new THREE.Vector3().addVectors(firePos, waterPos).multiplyScalar(0.5);
-              this.steamContent.object3D.position.copy(midPos);
-              this.steamContent.object3D.rotation.z += 0.05; 
+              this.steamShape.object3D.position.copy(midPos);
+              
+              // 讓球變大變小呼吸效果 (模擬蒸氣)
+              const scale = 1 + Math.sin(Date.now() / 200) * 0.2;
+              this.steamShape.object3D.scale.set(scale, scale, scale);
+
             } else {
-              // 距離不夠近，顯示原本的圖
-              this.fireContent.setAttribute('visible', true);
-              this.waterContent.setAttribute('visible', true);
-              this.steamContent.setAttribute('visible', false);
+              this.resetDisplay();
             }
           }
         },
 
         resetDisplay: function() {
-          // 只要有一張卡片消失，就恢復原狀
-          this.fireContent.setAttribute('visible', true);
-          this.waterContent.setAttribute('visible', true);
-          this.steamContent.setAttribute('visible', false);
+          this.fireShape.setAttribute('visible', true);
+          this.waterShape.setAttribute('visible', true);
+          this.steamShape.setAttribute('visible', false);
         },
 
         updateDebugText: function(msg) {
-          if (this.debugText) {
-            this.debugText.setAttribute('value', msg);
-          }
+          if (this.debugText) this.debugText.setAttribute('value', msg);
         }
       });
     </script>
@@ -97,30 +97,21 @@
              vr-mode-ui="enabled: false" 
              device-orientation-permission-ui="enabled: false">
       
-      <a-assets>
-        <img id="icon-fire" src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Fire_Icon.svg/1024px-Fire_Icon.svg.png" />
-        <img id="icon-water" src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1c/Water_drop_icon.svg/1024px-Water_drop_icon.svg.png" />
-        <img id="icon-steam" src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/Cloud_icon.svg/1024px-Cloud_icon.svg.png" />
-      </a-assets>
-
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <a-entity id="debug-text" 
-                position="0 1.2 -1.5" 
-                text="value: Waiting...; color: red; align: center; width: 4; background: white">
-      </a-entity>
+      <a-entity id="debug-text" position="0 1.2 -1.5" text="value: Ready; color: red; align: center; width: 4; background: white"></a-entity>
 
       <a-entity fusion-logic></a-entity>
 
       <a-entity id="target-fire" mindar-image-target="targetIndex: 0">
-        <a-image id="content-fire" src="#icon-fire" position="0 0 0" height="0.6" width="0.6"></a-image>
+        <a-circle id="shape-fire" color="red" radius="0.4" position="0 0 0" rotation="-90 0 0"></a-circle>
       </a-entity>
 
       <a-entity id="target-water" mindar-image-target="targetIndex: 1">
-        <a-image id="content-water" src="#icon-water" position="0 0 0" height="0.6" width="0.6"></a-image>
+        <a-circle id="shape-water" color="blue" radius="0.4" position="0 0 0" rotation="-90 0 0"></a-circle>
       </a-entity>
 
-      <a-image id="content-steam" src="#icon-steam" visible="false" height="1" width="1"></a-image>
+      <a-sphere id="shape-steam" color="white" opacity="0.8" radius="0.5" visible="false"></a-sphere>
 
     </a-scene>
   </body>
