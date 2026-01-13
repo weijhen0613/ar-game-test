@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>客製化復活節接蛋 - 最終版</title>
+  <title>Easter Egg Hunt</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -36,15 +36,12 @@
   function logError(msg) { document.getElementById('error-log').style.display = 'block'; document.getElementById('error-log').innerText = "⚠️ " + msg; console.error(msg); }
 
   // === 1. 圖片載入區 ===
-  // 背景大圖
   const bgImg = new Image();
-  bgImg.src = './background.png'; // 請確保你有這張圖
+  bgImg.src = './background.png'; 
 
-  // 籃子
   const basketImg = new Image();
   basketImg.src = './my_basket.png';
 
-  // 雞蛋 (3種)
   const eggFiles = ['./egg1.png', './egg2.png', './egg3.png'];
   const eggImages = [];
   eggFiles.forEach(src => {
@@ -64,22 +61,14 @@
   let basketPosition = { x: 0.5, y: 0.8 };
   let isBasketOpen = true; 
 
-  // === 2. 繪製背景 (單張大圖模式) ===
+  // === 2. 繪製背景 ===
   function drawBackground(width, height) {
     canvasCtx.save();
-    
-    // 如果背景圖載入好了
     if (bgImg.complete && bgImg.naturalHeight !== 0) {
-      // 因為外層 Canvas 被鏡像翻轉了 (scaleX -1)，背景圖如果直接畫會是反的
-      // 所以我們要先翻轉畫布，畫完再翻回來
       canvasCtx.translate(width, 0);
       canvasCtx.scale(-1, 1);
-      
-      // 這裡使用 drawImage 填滿整個畫面
-      // 建議你的 background.png 是直式的 (例如 1080x1920)
       canvasCtx.drawImage(bgImg, 0, 0, width, height);
     }
-    
     canvasCtx.restore();
   }
   
@@ -92,12 +81,29 @@
     return (fingersUp >= 3) ? "PAPER" : "ROCK";
   }
 
+  // === 3. 遊戲邏輯優化 ===
   function updateGame(width, height) {
     const now = Date.now();
-    if (now - lastSpawnTime > 800) { 
+    
+    // 修改 A: 放慢生成速度 (原本 800 -> 改成 1300，約 1.3 秒一顆)
+    if (now - lastSpawnTime > 1300) { 
       const type = Math.random() > 0.3 ? 'egg' : 'bomb'; 
+      
+      // 修改 B: 強化不重疊邏輯
       let newX = Math.random();
-      for(let k=0; k<3; k++) { if (Math.abs(newX - lastSpawnX) < 0.3) newX = Math.random(); else break; }
+      let isSafe = false;
+      
+      // 嘗試找 5 次安全位置，避免跟上一顆太近
+      for(let k=0; k<5; k++) { 
+        // 距離拉大到 0.35 (螢幕寬度的 35%)
+        if (Math.abs(newX - lastSpawnX) > 0.35) {
+          isSafe = true;
+          break; 
+        }
+        newX = Math.random();
+      }
+      // 如果試了5次還是找不到好位置(極少發生)，就直接用隨機的，但至少試過了
+      
       lastSpawnX = newX; 
       const speed = 0.01 + Math.random() * 0.015; 
       
@@ -115,9 +121,7 @@
       if (!obj.active) continue;
       obj.y += obj.speed;
       const screenX = obj.x * width; const screenY = obj.y * height;
-      
-      // === 修改處：雞蛋比例修正 ===
-      const baseSize = 80; // 這是寬度
+      const baseSize = 80;
 
       canvasCtx.save(); 
       canvasCtx.translate(screenX, screenY); 
@@ -126,11 +130,8 @@
       if (obj.type === 'egg') {
         const img = eggImages[obj.eggIdx];
         if (img.complete && img.naturalHeight !== 0) {
-           // 計算原本圖片的比例
            const ratio = img.naturalHeight / img.naturalWidth;
-           const drawHeight = baseSize * ratio; // 根據比例算出正確高度
-           
-           // 繪製圖片 (這樣就不會變形了)
+           const drawHeight = baseSize * ratio;
            canvasCtx.drawImage(img, -baseSize/2, -drawHeight/2, baseSize, drawHeight);
         } else {
            canvasCtx.font = "60px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle"; canvasCtx.fillText("🥚", 0, 0);
@@ -184,16 +185,12 @@
 
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, w, h);
-      
-      // 1. 畫攝影機
       canvasCtx.drawImage(results.image, 0, 0, w, h);
-      
-      // 2. 畫你上傳的那張大背景圖
       drawBackground(w, h);
 
       if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         const landmarks = results.multiHandLandmarks[0];
-        // drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+        // 不畫骨架線
         
         const gesture = detectGesture(landmarks);
         isBasketOpen = (gesture === "PAPER");
@@ -201,23 +198,23 @@
         const basketX = basketPosition.x * w; const basketY = basketPosition.y * h;
         const basketWidth = 130; 
 
-        canvasCtx.save(); 
-        canvasCtx.translate(basketX, basketY - 50); 
-        canvasCtx.scale(-1, 1); 
-        
+        // === 修改 C: 只有籃子打開時才畫圖 ===
         if (isBasketOpen) {
+          canvasCtx.save(); 
+          canvasCtx.translate(basketX, basketY - 50); 
+          canvasCtx.scale(-1, 1); 
+          
           if (basketImg.complete && basketImg.naturalHeight !== 0) {
-             // 籃子也加入比例修正
              const bRatio = basketImg.naturalHeight / basketImg.naturalWidth;
              const bHeight = basketWidth * bRatio;
              canvasCtx.drawImage(basketImg, -basketWidth/2, -bHeight/2, basketWidth, bHeight);
           } else {
              canvasCtx.font = "100px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle"; canvasCtx.fillText("🧺", 0, 0); 
           }
-        } else {
-          canvasCtx.font = "100px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle"; canvasCtx.fillText("👊", 0, 0);
-        }
-        canvasCtx.restore();
+          canvasCtx.restore();
+        } 
+        // 這裡沒有 else 了，所以握拳時什麼都不會顯示 (只會看到你的手)
+        
       } else {
          scoreBoard.innerText = "請把手放在鏡頭前";
       }
