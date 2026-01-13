@@ -2,8 +2,8 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>手勢識別測試 - MediaPipe</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>手勢識別 - 修正版</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -12,31 +12,47 @@
   
   <style>
     body { margin: 0; background: black; overflow: hidden; }
-    /* 讓影片和畫布疊在一起 */
     .container { position: relative; width: 100vw; height: 100vh; }
-    video { position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); } /* 鏡像翻轉 */
-    canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
     
-    /* 顯示手勢結果的文字框 */
+    /* 關鍵 CSS：確保影片填滿螢幕 */
+    video { 
+      position: absolute; 
+      top: 0; left: 0;
+      width: 100%; height: 100%; 
+      object-fit: cover; 
+      transform: scaleX(-1); /* 鏡像翻轉 */
+    }
+    
+    canvas { 
+      position: absolute; 
+      top: 0; left: 0;
+      width: 100%; height: 100%; 
+      object-fit: cover; 
+      transform: scaleX(-1); 
+    }
+    
     #status-box {
       position: absolute;
       top: 20px; left: 50%;
       transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.7);
-      color: #00FF00;
+      background: rgba(0, 0, 0, 0.6);
+      color: white;
       padding: 10px 20px;
-      font-size: 24px;
-      border-radius: 10px;
-      z-index: 10;
+      font-size: 20px;
+      border-radius: 20px;
+      z-index: 100;
+      white-space: nowrap;
       font-family: sans-serif;
+      border: 2px solid white;
     }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <div id="status-box">請舉起手...</div>
-  <video id="input_video"></video>
+  <div id="status-box">初始化相機中...</div>
+  
+  <video id="input_video" playsinline autoplay muted></video>
   <canvas id="output_canvas"></canvas>
 </div>
 
@@ -46,48 +62,35 @@
   const canvasCtx = canvasElement.getContext('2d');
   const statusBox = document.getElementById('status-box');
 
-  // === 手勢判斷邏輯 ===
+  // 手勢判斷邏輯
   function detectGesture(landmarks) {
-    // MediaPipe 手指點位索引：
-    // 0: 手腕, 4: 拇指尖, 8: 食指尖, 12: 中指尖, 16: 無名指尖, 20: 小指尖
+    let fingersUp = [false, false, false, false, false];
     
-    // 簡單判斷：手指是伸直還是彎曲？
-    // 邏輯：比較「指尖 (Tip)」和「第二關節 (Pip)」的 Y 軸位置
-    // 注意：在螢幕座標中，Y 越小代表越上面
+    // 判斷手指是否伸直 (y軸比較)
+    if (landmarks[8].y < landmarks[6].y) fingersUp[1] = true;  // 食指
+    if (landmarks[12].y < landmarks[10].y) fingersUp[2] = true; // 中指
+    if (landmarks[16].y < landmarks[14].y) fingersUp[3] = true; // 無名指
+    if (landmarks[20].y < landmarks[18].y) fingersUp[4] = true; // 小指
     
-    let fingersUp = [false, false, false, false, false]; // 拇指, 食指, 中指, 無名指, 小指
+    // 拇指判斷 (x軸比較，依賴鏡像與否，這裡做簡單判定)
+    // 如果拇指尖端比關節更遠離手掌中心
+    if (Math.abs(landmarks[4].x - landmarks[9].x) > Math.abs(landmarks[3].x - landmarks[9].x)) {
+        fingersUp[0] = true;
+    }
 
-    // 1. 食指 (8 vs 6)
-    if (landmarks[8].y < landmarks[6].y) fingersUp[1] = true;
-    // 2. 中指 (12 vs 10)
-    if (landmarks[12].y < landmarks[10].y) fingersUp[2] = true;
-    // 3. 無名指 (16 vs 14)
-    if (landmarks[16].y < landmarks[14].y) fingersUp[3] = true;
-    // 4. 小指 (20 vs 18)
-    if (landmarks[20].y < landmarks[18].y) fingersUp[4] = true;
-
-    // 5. 拇指 (比較特別，因為它是往側邊動，我們比對 X 軸)
-    // 這裡做簡單判斷：拇指尖是否比指節更遠離手掌中心
-    if (landmarks[4].x < landmarks[3].x) fingersUp[0] = true; // 右手邏輯 (鏡像後可能要調整)
-
-    // 計算有幾根手指伸直
     const upCount = fingersUp.filter(isUp => isUp).length;
 
-    // === 判定結果 ===
-    if (upCount >= 4) {
-      return "🖐️ 布 (Paper) - 接住！";
-    } else if (upCount == 0 || upCount == 1) {
-      return "✊ 石頭 (Rock) - 沒接住";
-    } else if (fingersUp[1] && fingersUp[2] && !fingersUp[3] && !fingersUp[4]) {
-      return "✌️ 勝利 (Scissors)";
-    } else {
-      return "🤔 辨識中...";
-    }
+    if (upCount >= 4) return "🖐️ 布 (接球模式)";
+    if (upCount <= 1) return "✊ 石頭 (防禦模式)";
+    if (fingersUp[1] && fingersUp[2] && !fingersUp[3] && !fingersUp[4]) return "✌️ 勝利 (拍照)";
+    
+    return "✋ 手勢偵測中...";
   }
 
-  // === MediaPipe 設定 ===
   function onResults(results) {
-    // 設定畫布大小
+    statusBox.innerText = "請把手放在鏡頭前";
+    
+    // 設定 Canvas 大小跟隨 Video
     canvasElement.width = videoElement.videoWidth;
     canvasElement.height = videoElement.videoHeight;
     
@@ -97,19 +100,20 @@
     // 繪製相機畫面
     canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-    if (results.multiHandLandmarks) {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       for (const landmarks of results.multiHandLandmarks) {
-        // 1. 畫出骨架
+        // 畫出骨架
         drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
         drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
         
-        // 2. 進行手勢比對
-        const gesture = detectGesture(landmarks);
-        statusBox.innerText = gesture;
+        // 判斷手勢
+        const gestureText = detectGesture(landmarks);
+        statusBox.innerText = gestureText;
         
-        // 如果偵測到「布」，文字變綠色；「石頭」變紅色
-        if (gesture.includes("布")) statusBox.style.color = "#00FF00";
-        else if (gesture.includes("石頭")) statusBox.style.color = "red";
+        // 變色回饋
+        if (gestureText.includes("布")) statusBox.style.borderColor = "#00FF00"; // 綠
+        else if (gestureText.includes("石頭")) statusBox.style.borderColor = "red"; // 紅
+        else statusBox.style.borderColor = "white";
       }
     }
     canvasCtx.restore();
@@ -120,7 +124,7 @@
   }});
 
   hands.setOptions({
-    maxNumHands: 1, // 只偵測一隻手
+    maxNumHands: 1,
     modelComplexity: 1,
     minDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5
@@ -128,14 +132,24 @@
 
   hands.onResults(onResults);
 
+  // 啟動相機
   const camera = new Camera(videoElement, {
     onFrame: async () => {
       await hands.send({image: videoElement});
     },
     width: 1280,
-    height: 720
+    height: 720,
+    facingMode: 'user' // 強制使用前鏡頭
   });
-  camera.start();
+  
+  camera.start()
+    .then(() => {
+      console.log("相機啟動成功");
+    })
+    .catch((err) => {
+      console.error("相機啟動失敗", err);
+      statusBox.innerText = "相機啟動失敗: " + err;
+    });
 </script>
 
 </body>
