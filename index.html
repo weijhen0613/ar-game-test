@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>客製化復活節接蛋</title>
+  <title>客製化復活節接蛋 - 最終版</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -35,41 +35,22 @@
 <script>
   function logError(msg) { document.getElementById('error-log').style.display = 'block'; document.getElementById('error-log').innerText = "⚠️ " + msg; console.error(msg); }
 
-  // === 1. 圖片預載入系統 ===
-  // 定義檔案路徑
-  const bgBirdFiles = ['./bg_bird1.png', './bg_bird2.png', './bg_bird3.png'];
-  const eggFiles = ['./egg1.png', './egg2.png', './egg3.png'];
-  const basketFile = './my_basket.png';
+  // === 1. 圖片載入區 ===
+  // 背景大圖
+  const bgImg = new Image();
+  bgImg.src = './background.png'; // 請確保你有這張圖
 
-  // 建立圖片物件容器
-  const bgBirdImages = [];
-  const eggImages = [];
+  // 籃子
   const basketImg = new Image();
-  basketImg.src = basketFile;
+  basketImg.src = './my_basket.png';
 
-  // 載入背景鳥圖
-  bgBirdFiles.forEach(src => {
-    const img = new Image(); img.src = src;
-    bgBirdImages.push(img);
-  });
-  // 載入雞蛋圖
+  // 雞蛋 (3種)
+  const eggFiles = ['./egg1.png', './egg2.png', './egg3.png'];
+  const eggImages = [];
   eggFiles.forEach(src => {
     const img = new Image(); img.src = src;
     eggImages.push(img);
   });
-
-  // === 2. 初始化背景元素 ===
-  const backgroundElements = [];
-  for (let i = 0; i < 8; i++) { // 產生 8 隻背景鳥
-    backgroundElements.push({
-      x: Math.random(),        
-      y: 0.7 + Math.random() * 0.25, // 地面區域
-      // 隨機分配一張背景鳥圖片的「索引編號」(0, 1, 或 2)
-      imgIndex: Math.floor(Math.random() * bgBirdImages.length),
-      size: 50 + Math.random() * 30, // 鳥的大小
-      rotation: (Math.random() - 0.5) * 0.3
-    });
-  }
 
   const videoElement = document.getElementById('input_video');
   const canvasElement = document.getElementById('output_canvas');
@@ -83,32 +64,22 @@
   let basketPosition = { x: 0.5, y: 0.8 };
   let isBasketOpen = true; 
 
-  // === 繪製背景函數 (使用圖片) ===
+  // === 2. 繪製背景 (單張大圖模式) ===
   function drawBackground(width, height) {
     canvasCtx.save();
-    backgroundElements.forEach(bgElem => {
-      const x = bgElem.x * width;
-      const y = bgElem.y * height;
-      const size = bgElem.size;
-      // 取得對應的圖片物件
-      const img = bgBirdImages[bgElem.imgIndex];
-
-      canvasCtx.save();
-      canvasCtx.translate(x, y);
-      canvasCtx.scale(-1, 1); // 翻轉回來
-      canvasCtx.rotate(bgElem.rotation);
+    
+    // 如果背景圖載入好了
+    if (bgImg.complete && bgImg.naturalHeight !== 0) {
+      // 因為外層 Canvas 被鏡像翻轉了 (scaleX -1)，背景圖如果直接畫會是反的
+      // 所以我們要先翻轉畫布，畫完再翻回來
+      canvasCtx.translate(width, 0);
+      canvasCtx.scale(-1, 1);
       
-      // 如果圖片讀取成功，就畫圖
-      if (img.complete && img.naturalHeight !== 0) {
-        // drawImage(圖片, x偏移, y偏移, 寬, 高) - 偏移一半是為了置中
-        canvasCtx.drawImage(img, -size/2, -size/2, size, size * (img.height/img.width));
-      } else {
-        // 圖片還沒好，暫時畫個圓圈代替
-        canvasCtx.beginPath(); canvasCtx.arc(0, 0, size/3, 0, 2 * Math.PI);
-        canvasCtx.fillStyle = "rgba(255,255,255,0.5)"; canvasCtx.fill();
-      }
-      canvasCtx.restore();
-    });
+      // 這裡使用 drawImage 填滿整個畫面
+      // 建議你的 background.png 是直式的 (例如 1080x1920)
+      canvasCtx.drawImage(bgImg, 0, 0, width, height);
+    }
+    
     canvasCtx.restore();
   }
   
@@ -121,7 +92,6 @@
     return (fingersUp >= 3) ? "PAPER" : "ROCK";
   }
 
-  // === 遊戲邏輯 (加入多種蛋) ===
   function updateGame(width, height) {
     const now = Date.now();
     if (now - lastSpawnTime > 800) { 
@@ -131,7 +101,6 @@
       lastSpawnX = newX; 
       const speed = 0.01 + Math.random() * 0.015; 
       
-      // 如果是蛋，隨機選一種蛋的索引 (0, 1, 或 2)
       let eggIdx = 0;
       if (type === 'egg') {
         eggIdx = Math.floor(Math.random() * eggImages.length);
@@ -146,22 +115,27 @@
       if (!obj.active) continue;
       obj.y += obj.speed;
       const screenX = obj.x * width; const screenY = obj.y * height;
-      const itemSize = 80; // 掉落物大小
+      
+      // === 修改處：雞蛋比例修正 ===
+      const baseSize = 80; // 這是寬度
 
       canvasCtx.save(); 
       canvasCtx.translate(screenX, screenY); 
       canvasCtx.scale(-1, 1); 
       
       if (obj.type === 'egg') {
-        // 畫指定的雞蛋圖
         const img = eggImages[obj.eggIdx];
-        if (img.complete) {
-           canvasCtx.drawImage(img, -itemSize/2, -itemSize/2, itemSize, itemSize);
+        if (img.complete && img.naturalHeight !== 0) {
+           // 計算原本圖片的比例
+           const ratio = img.naturalHeight / img.naturalWidth;
+           const drawHeight = baseSize * ratio; // 根據比例算出正確高度
+           
+           // 繪製圖片 (這樣就不會變形了)
+           canvasCtx.drawImage(img, -baseSize/2, -drawHeight/2, baseSize, drawHeight);
         } else {
            canvasCtx.font = "60px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle"; canvasCtx.fillText("🥚", 0, 0);
         }
       } else {
-        // 畫炸彈 (還是 Emoji)
         canvasCtx.font = "60px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle";
         canvasCtx.fillText("💣", 0, 0);
       }
@@ -210,37 +184,37 @@
 
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, w, h);
+      
+      // 1. 畫攝影機
       canvasCtx.drawImage(results.image, 0, 0, w, h);
       
-      // 繪製背景圖片
+      // 2. 畫你上傳的那張大背景圖
       drawBackground(w, h);
 
       if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         const landmarks = results.multiHandLandmarks[0];
-        // 註解掉骨架繪製，讓畫面更乾淨
         // drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
         
         const gesture = detectGesture(landmarks);
         isBasketOpen = (gesture === "PAPER");
         basketPosition.x = landmarks[9].x; basketPosition.y = landmarks[9].y;
         const basketX = basketPosition.x * w; const basketY = basketPosition.y * h;
-        const basketSize = 130; // 籃子大小
+        const basketWidth = 130; 
 
-        // === 繪製你的客製化籃子 ===
         canvasCtx.save(); 
         canvasCtx.translate(basketX, basketY - 50); 
         canvasCtx.scale(-1, 1); 
         
         if (isBasketOpen) {
-          if (basketImg.complete) {
-             // 畫出你的籃子圖片
-             canvasCtx.drawImage(basketImg, -basketSize/2, -basketSize/2, basketSize, basketSize * (basketImg.height/basketImg.width));
+          if (basketImg.complete && basketImg.naturalHeight !== 0) {
+             // 籃子也加入比例修正
+             const bRatio = basketImg.naturalHeight / basketImg.naturalWidth;
+             const bHeight = basketWidth * bRatio;
+             canvasCtx.drawImage(basketImg, -basketWidth/2, -bHeight/2, basketWidth, bHeight);
           } else {
-             // 如果圖片沒讀到，顯示 Emoji
              canvasCtx.font = "100px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle"; canvasCtx.fillText("🧺", 0, 0); 
           }
         } else {
-          // 握拳時顯示 Emoji
           canvasCtx.font = "100px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle"; canvasCtx.fillText("👊", 0, 0);
         }
         canvasCtx.restore();
@@ -264,4 +238,3 @@
 </script>
 </body>
 </html>
-
