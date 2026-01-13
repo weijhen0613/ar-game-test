@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>Easter Egg Hunt</title>
+  <title>客製化復活節接蛋 - 石頭版</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -35,19 +35,20 @@
 <script>
   function logError(msg) { document.getElementById('error-log').style.display = 'block'; document.getElementById('error-log').innerText = "⚠️ " + msg; console.error(msg); }
 
-  // === 1. 圖片載入區 ===
-  const bgImg = new Image();
-  bgImg.src = './background.png'; 
+  // === 1. 圖片載入區 (修改了這裡) ===
+  const bgImg = new Image(); bgImg.src = './background.png'; 
+  const basketImg = new Image(); basketImg.src = './my_basket.png';
 
-  const basketImg = new Image();
-  basketImg.src = './my_basket.png';
-
+  // 雞蛋圖片
   const eggFiles = ['./egg1.png', './egg2.png', './egg3.png'];
   const eggImages = [];
-  eggFiles.forEach(src => {
-    const img = new Image(); img.src = src;
-    eggImages.push(img);
-  });
+  eggFiles.forEach(src => { const img = new Image(); img.src = src; eggImages.push(img); });
+
+  // === 新增：石頭圖片 ===
+  const rockFiles = ['./rock1.png', './rock2.png', './rock3.png'];
+  const rockImages = [];
+  rockFiles.forEach(src => { const img = new Image(); img.src = src; rockImages.push(img); });
+
 
   const videoElement = document.getElementById('input_video');
   const canvasElement = document.getElementById('output_canvas');
@@ -81,38 +82,34 @@
     return (fingersUp >= 3) ? "PAPER" : "ROCK";
   }
 
-  // === 3. 遊戲邏輯優化 ===
+  // === 3. 遊戲邏輯 ===
   function updateGame(width, height) {
     const now = Date.now();
     
-    // 修改 A: 放慢生成速度 (原本 800 -> 改成 1300，約 1.3 秒一顆)
+    // 生成頻率
     if (now - lastSpawnTime > 1300) { 
+      // 這裡 type 還是叫 'bomb' 沒關係，我們知道它是壞東西就好
       const type = Math.random() > 0.3 ? 'egg' : 'bomb'; 
       
-      // 修改 B: 強化不重疊邏輯
       let newX = Math.random();
-      let isSafe = false;
-      
-      // 嘗試找 5 次安全位置，避免跟上一顆太近
       for(let k=0; k<5; k++) { 
-        // 距離拉大到 0.35 (螢幕寬度的 35%)
-        if (Math.abs(newX - lastSpawnX) > 0.35) {
-          isSafe = true;
-          break; 
-        }
+        if (Math.abs(newX - lastSpawnX) > 0.35) { break; }
         newX = Math.random();
       }
-      // 如果試了5次還是找不到好位置(極少發生)，就直接用隨機的，但至少試過了
       
       lastSpawnX = newX; 
       const speed = 0.01 + Math.random() * 0.015; 
       
-      let eggIdx = 0;
+      // 隨機選擇圖片索引
+      let imgIdx = 0;
       if (type === 'egg') {
-        eggIdx = Math.floor(Math.random() * eggImages.length);
+        imgIdx = Math.floor(Math.random() * eggImages.length);
+      } else {
+        // 如果是壞東西，隨機選一張石頭圖
+        imgIdx = Math.floor(Math.random() * rockImages.length);
       }
 
-      gameObjects.push({ x: newX, y: -0.1, type: type, eggIdx: eggIdx, speed: speed, active: true });
+      gameObjects.push({ x: newX, y: -0.1, type: type, imgIdx: imgIdx, speed: speed, active: true });
       lastSpawnTime = now;
     }
 
@@ -121,25 +118,35 @@
       if (!obj.active) continue;
       obj.y += obj.speed;
       const screenX = obj.x * width; const screenY = obj.y * height;
-      const baseSize = 80;
+      const baseSize = 80; // 基礎大小
 
       canvasCtx.save(); 
       canvasCtx.translate(screenX, screenY); 
       canvasCtx.scale(-1, 1); 
       
+      // 決定要畫哪張圖
+      let imgToDraw = null;
+      let fallbackEmoji = "";
+
       if (obj.type === 'egg') {
-        const img = eggImages[obj.eggIdx];
-        if (img.complete && img.naturalHeight !== 0) {
-           const ratio = img.naturalHeight / img.naturalWidth;
-           const drawHeight = baseSize * ratio;
-           canvasCtx.drawImage(img, -baseSize/2, -drawHeight/2, baseSize, drawHeight);
-        } else {
-           canvasCtx.font = "60px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle"; canvasCtx.fillText("🥚", 0, 0);
-        }
+        imgToDraw = eggImages[obj.imgIdx];
+        fallbackEmoji = "🥚";
       } else {
-        canvasCtx.font = "60px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle";
-        canvasCtx.fillText("💣", 0, 0);
+        // 如果是壞東西，改用石頭圖陣列
+        imgToDraw = rockImages[obj.imgIdx];
+        fallbackEmoji = "🪨";
       }
+
+      // 繪製圖片並維持比例
+      if (imgToDraw && imgToDraw.complete && imgToDraw.naturalHeight !== 0) {
+          const ratio = imgToDraw.naturalHeight / imgToDraw.naturalWidth;
+          const drawHeight = baseSize * ratio;
+          canvasCtx.drawImage(imgToDraw, -baseSize/2, -drawHeight/2, baseSize, drawHeight);
+      } else {
+          canvasCtx.font = "60px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle";
+          canvasCtx.fillText(fallbackEmoji, 0, 0);
+      }
+
       canvasCtx.restore(); 
 
       // 碰撞判定
@@ -190,15 +197,12 @@
 
       if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         const landmarks = results.multiHandLandmarks[0];
-        // 不畫骨架線
-        
         const gesture = detectGesture(landmarks);
         isBasketOpen = (gesture === "PAPER");
         basketPosition.x = landmarks[9].x; basketPosition.y = landmarks[9].y;
         const basketX = basketPosition.x * w; const basketY = basketPosition.y * h;
         const basketWidth = 130; 
 
-        // === 修改 C: 只有籃子打開時才畫圖 ===
         if (isBasketOpen) {
           canvasCtx.save(); 
           canvasCtx.translate(basketX, basketY - 50); 
@@ -213,7 +217,6 @@
           }
           canvasCtx.restore();
         } 
-        // 這裡沒有 else 了，所以握拳時什麼都不會顯示 (只會看到你的手)
         
       } else {
          scoreBoard.innerText = "請把手放在鏡頭前";
