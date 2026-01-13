@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>復活節接彩蛋</title>
+  <title>復活節接彩蛋 - 穩定版</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -14,24 +14,38 @@
     body { margin: 0; background: #222; overflow: hidden; font-family: 'Arial', sans-serif; }
     .container { position: relative; width: 100vw; height: 100vh; }
     
-    video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: 0; }
-    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    /* 隱藏原始影片，只顯示 Canvas */
+    video { 
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+      object-fit: cover; transform: scaleX(-1); opacity: 0; 
+    }
+    canvas { 
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+      object-fit: cover; transform: scaleX(-1); 
+    }
     
     #ui-layer {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
       pointer-events: none; display: flex; justify-content: center; align-items: flex-start; 
     }
     
-    /* 復活節主題的分數板顏色 */
+    /* 復活節配色分數板 */
     #score-board {
-      margin-top: 15px; padding: 8px 20px; 
-      background: rgba(255, 240, 200, 0.7); /* 鵝黃色背景 */
-      backdrop-filter: blur(5px); border-radius: 20px;
-      font-size: 20px; font-weight: bold; color: #d35400; /* 深橘色文字 */
-      border: 2px solid rgba(255,255,255,0.8); z-index: 10;
+      margin-top: 15px; padding: 10px 25px; 
+      background: rgba(255, 248, 220, 0.8); /* 米黃色 */
+      backdrop-filter: blur(5px); border-radius: 30px;
+      font-size: 24px; font-weight: bold; color: #d35400; /* 深橘色 */
+      border: 3px solid #f1c40f; /* 金色邊框 */
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      z-index: 10;
     }
 
-    #error-log { position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(255, 0, 0, 0.8); color: white; font-size: 14px; padding: 10px; display: none; z-index: 999; }
+    /* 錯誤訊息區 */
+    #error-log { 
+      position: absolute; bottom: 0; left: 0; width: 100%; 
+      background: rgba(200, 0, 0, 0.9); color: white; 
+      font-size: 16px; padding: 15px; display: none; z-index: 9999; 
+    }
   </style>
 </head>
 <body>
@@ -44,14 +58,34 @@
 </div>
 
 <script>
-  function logError(msg) { document.getElementById('error-log').style.display = 'block'; document.getElementById('error-log').innerText = "⚠️ " + msg; }
+  // === 錯誤處理工具 ===
+  function logError(msg) {
+    const errDiv = document.getElementById('error-log');
+    errDiv.style.display = 'block';
+    errDiv.innerText = "⚠️ 錯誤: " + msg;
+    console.error(msg);
+  }
+
+  // === 1. 初始化背景小鳥 (固定產生 10 隻) ===
+  const backgroundElements = [];
+  const birdEmojis = ['🐦', '🐤', '🕊️', '🦜', '🐥'];
+  
+  // 我們直接在這裡生成，不要放在函數裡，避免重複執行
+  for (let i = 0; i < 10; i++) {
+    backgroundElements.push({
+      x: Math.random(),        // 0.0 ~ 1.0 (相對位置)
+      y: Math.random() * 0.6,  // 0.0 ~ 0.6 (上半部)
+      emoji: birdEmojis[Math.floor(Math.random() * birdEmojis.length)],
+      size: 30 + Math.random() * 30,
+      rotation: (Math.random() - 0.5) * 0.5
+    });
+  }
 
   const videoElement = document.getElementById('input_video');
   const canvasElement = document.getElementById('output_canvas');
   const canvasCtx = canvasElement.getContext('2d');
   const scoreBoard = document.getElementById('score-board');
 
-  // === 遊戲變數 ===
   let score = 0;
   let gameObjects = []; 
   let lastSpawnTime = 0;
@@ -59,42 +93,24 @@
   let basketPosition = { x: 0.5, y: 0.8 };
   let isBasketOpen = true; 
 
-  // === 新增：背景元素 (小鳥) ===
-  let backgroundElements = [];
-  let isBgInitialized = false;
-
-  // 初始化背景小鳥 (只執行一次)
-  function initBackgroundBirds(width, height) {
-    const birdEmojis = ['🐦', '🐤', '🕊️', '🦜'];
-    // 在畫面上隨機產生 8 隻小鳥
-    for (let i = 0; i < 8; i++) {
-      backgroundElements.push({
-        x: Math.random() * width,        // 隨機水平位置
-        y: Math.random() * height * 0.6, // 只分佈在畫面上半部 (天空)
-        emoji: birdEmojis[Math.floor(Math.random() * birdEmojis.length)],
-        size: 30 + Math.random() * 20,   // 隨機大小
-        rotation: (Math.random() - 0.5) * 0.5 // 隨機一點點傾斜
-      });
-    }
-    isBgInitialized = true;
-  }
-
-  // 繪製背景小鳥
+  // === 2. 繪製背景函數 ===
   function drawBackground(width, height) {
-    if (!isBgInitialized) initBackgroundBirds(width, height);
-
     canvasCtx.save();
-    // 因為背景不需要跟著人動，我們不用把它們鏡像翻轉，直接畫就好
-    // 但如果希望它們跟著鏡頭方向，可以取消下面這行的註解
-    // canvasCtx.scale(-1, 1); canvasCtx.translate(-width, 0);
-
+    // 這裡不進行鏡像翻轉，因為背景不需要跟著人動
+    // 但是因為整個 Canvas 已經被外部翻轉了，我們需要把字「反回來」才不會是鏡像的
+    
     backgroundElements.forEach(bgElem => {
+      const x = bgElem.x * width;
+      const y = bgElem.y * height;
+      
       canvasCtx.font = `${bgElem.size}px Arial`;
-      canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle";
-      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.8)"; // 稍微半透明一點，像背景
+      canvasCtx.textAlign = "center"; 
+      canvasCtx.textBaseline = "middle";
+      canvasCtx.fillStyle = "rgba(255, 255, 255, 0.6)"; // 半透明
 
       canvasCtx.save();
-      canvasCtx.translate(bgElem.x, bgElem.y);
+      canvasCtx.translate(x, y);
+      canvasCtx.scale(-1, 1); // 重要：因為外層 Canvas 翻轉了，這裡要翻回來
       canvasCtx.rotate(bgElem.rotation);
       canvasCtx.fillText(bgElem.emoji, 0, 0);
       canvasCtx.restore();
@@ -102,55 +118,204 @@
     canvasCtx.restore();
   }
   
-  // 手勢判斷
+  // === 手勢判斷 ===
   function detectGesture(landmarks) {
     let fingersUp = 0;
     if (landmarks[8].y < landmarks[6].y) fingersUp++;
     if (landmarks[12].y < landmarks[10].y) fingersUp++;
     if (landmarks[16].y < landmarks[14].y) fingersUp++;
     if (landmarks[20].y < landmarks[18].y) fingersUp++;
-    return (fingersUp >= 3) ? "PAPER" : "ROCK";
+    
+    if (fingersUp >= 3) return "PAPER";
+    return "ROCK";
   }
 
-  // === 遊戲邏輯更新 ===
+  // === 遊戲邏輯 ===
   function updateGame(width, height) {
     const now = Date.now();
+    
+    // 生成新的蛋或炸彈
     if (now - lastSpawnTime > 800) { 
-      // 改成掉落蛋或炸彈
-      const type = Math.random() > 0.3 ? 'egg' : 'bomb'; 
+      const type = Math.random() > 0.3 ? 'egg' : 'bomb'; // 70% 是蛋
+      
       let newX = Math.random();
-      for(let k=0; k<3; k++) { if (Math.abs(newX - lastSpawnX) < 0.3) newX = Math.random(); else break; }
+      // 避免重疊邏輯
+      for(let k=0; k<3; k++) { 
+        if (Math.abs(newX - lastSpawnX) < 0.3) {
+          newX = Math.random(); 
+        } else {
+          break; 
+        }
+      }
       lastSpawnX = newX; 
+
       const speed = 0.01 + Math.random() * 0.015; 
       gameObjects.push({ x: newX, y: -0.1, type: type, speed: speed, active: true });
       lastSpawnTime = now;
     }
 
+    // 更新所有物件
     for (let i = 0; i < gameObjects.length; i++) {
       let obj = gameObjects[i];
       if (!obj.active) continue;
+
       obj.y += obj.speed;
-      const screenX = obj.x * width; const screenY = obj.y * height;
+
+      const screenX = obj.x * width; 
+      const screenY = obj.y * height;
       
-      canvasCtx.font = "55px Arial"; 
-      canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle";
-      canvasCtx.save(); canvasCtx.translate(screenX, screenY); canvasCtx.scale(-1, 1); 
+      canvasCtx.font = "60px Arial"; 
+      canvasCtx.textAlign = "center"; 
+      canvasCtx.textBaseline = "middle";
       
-      // 繪製蛋或炸彈
+      canvasCtx.save(); 
+      canvasCtx.translate(screenX, screenY); 
+      canvasCtx.scale(-1, 1); // 修正鏡像
+      
       if (obj.type === 'egg') canvasCtx.fillText("🥚", 0, 0); 
       else canvasCtx.fillText("💣", 0, 0);
       
       canvasCtx.restore(); 
 
+      // 碰撞判定
       if (isBasketOpen) {
-        const distX = Math.abs(obj.x - basketPosition.x); const distY = Math.abs(obj.y - basketPosition.y);
+        const distX = Math.abs(obj.x - basketPosition.x); 
+        const distY = Math.abs(obj.y - basketPosition.y);
+        
+        // 判定範圍
         if (distX < 0.12 && distY < 0.08) {
           if (obj.type === 'egg') {
-            score += 10; showEffect(screenX, screenY, "+10", "#FFD700"); // 金色特效
+            score += 10; 
+            showEffect(screenX, screenY, "+10", "#FFD700"); // 金色
           } else {
-            score -= 20; showEffect(screenX, screenY, "-20", "#FF0000"); 
+            score -= 20; 
+            showEffect(screenX, screenY, "-20", "#FF0000"); // 紅色
           }
           obj.active = false;
           scoreBoard.innerText = "Score: " + score;
-          scoreBoard.style.color = (score < 0) ? "red" : "#d35400";
+          
+          if (score < 0) scoreBoard.style.color = "red";
+          else scoreBoard.style.color = "#d35400";
+        }
+      }
 
+      if (obj.y > 1.1) obj.active = false;
+    }
+    
+    gameObjects = gameObjects.filter(obj => obj.active);
+  }
+
+  // === 特效文字 ===
+  let effects = [];
+  function showEffect(x, y, text, color) { 
+    effects.push({x, y, text, color, life: 30}); 
+  }
+  
+  function drawEffects() {
+    for (let i = 0; i < effects.length; i++) {
+      let e = effects[i];
+      if (e.life > 0) {
+        canvasCtx.fillStyle = e.color; 
+        canvasCtx.strokeStyle = "white"; 
+        canvasCtx.lineWidth = 2; 
+        canvasCtx.font = "bold 45px Arial";
+        
+        canvasCtx.save(); 
+        canvasCtx.translate(e.x, e.y); 
+        canvasCtx.scale(-1, 1); 
+        canvasCtx.strokeText(e.text, 0, 0); 
+        canvasCtx.fillText(e.text, 0, 0);
+        canvasCtx.restore(); 
+        
+        e.y -= 3; e.life--;
+      }
+    }
+    effects = effects.filter(e => e.life > 0);
+  }
+
+  // === MediaPipe 核心 (含安全防護) ===
+  function onResults(results) {
+    try {
+      canvasElement.width = videoElement.videoWidth; 
+      canvasElement.height = videoElement.videoHeight;
+      const w = canvasElement.width; 
+      const h = canvasElement.height;
+      
+      if (w === 0 || h === 0) return; // 還沒準備好就先跳過
+
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, w, h);
+      
+      // 1. 畫攝影機畫面
+      canvasCtx.drawImage(results.image, 0, 0, w, h);
+
+      // 2. 畫背景小鳥 (在手的前面還是後面？這裡設為畫在背景)
+      drawBackground(w, h);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+        
+        // 3. 畫手部骨架
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+        
+        const gesture = detectGesture(landmarks);
+        isBasketOpen = (gesture === "PAPER");
+
+        basketPosition.x = landmarks[9].x; 
+        basketPosition.y = landmarks[9].y;
+
+        const basketX = basketPosition.x * w; 
+        const basketY = basketPosition.y * h;
+        
+        // 4. 畫籃子
+        canvasCtx.font = "100px Arial"; 
+        canvasCtx.textAlign = "center"; 
+        canvasCtx.textBaseline = "middle";
+        
+        canvasCtx.save(); 
+        canvasCtx.translate(basketX, basketY - 60); 
+        canvasCtx.scale(-1, 1); // 修正 Emoji 鏡像
+        
+        if (isBasketOpen) canvasCtx.fillText("🧺", 0, 0); 
+        else canvasCtx.fillText("👊", 0, 0);
+        
+        canvasCtx.restore();
+      } else {
+         scoreBoard.innerText = "請把手放在鏡頭前";
+      }
+
+      // 5. 執行遊戲迴圈
+      updateGame(w, h);
+      drawEffects();
+      
+      canvasCtx.restore();
+
+    } catch (err) {
+      logError(err.message);
+      canvasCtx.restore(); // 確保不會因為報錯導致畫布狀態錯亂
+    }
+  }
+
+  // === 啟動程序 ===
+  const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+  hands.setOptions({ 
+    maxNumHands: 1, 
+    modelComplexity: 1, 
+    minDetectionConfidence: 0.5, 
+    minTrackingConfidence: 0.5 
+  });
+  
+  hands.onResults(onResults);
+
+  const camera = new Camera(videoElement, {
+    onFrame: async () => { await hands.send({image: videoElement}); },
+    width: 1280, height: 720, facingMode: 'user'
+  });
+  
+  camera.start()
+    .then(() => { console.log("Camera started"); })
+    .catch(err => { logError("相機啟動失敗: " + err); });
+
+</script>
+</body>
+</html>
