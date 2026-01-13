@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <title>手勢識別 - 修正版</title>
+  <title>手勢接接樂</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
@@ -11,146 +11,242 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   
   <style>
-    body { margin: 0; background: black; overflow: hidden; }
+    body { margin: 0; background: #222; overflow: hidden; font-family: 'Arial', sans-serif; }
     .container { position: relative; width: 100vw; height: 100vh; }
     
-    /* 關鍵 CSS：確保影片填滿螢幕 */
+    /* 影片層 (隱藏，我們只看 Canvas) */
     video { 
-      position: absolute; 
-      top: 0; left: 0;
-      width: 100%; height: 100%; 
-      object-fit: cover; 
-      transform: scaleX(-1); /* 鏡像翻轉 */
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+      object-fit: cover; transform: scaleX(-1); opacity: 0;
     }
     
+    /* 畫布層 (顯示遊戲畫面) */
     canvas { 
-      position: absolute; 
-      top: 0; left: 0;
-      width: 100%; height: 100%; 
-      object-fit: cover; 
-      transform: scaleX(-1); 
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+      object-fit: cover; transform: scaleX(-1); 
     }
     
-    #status-box {
-      position: absolute;
-      top: 20px; left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.6);
-      color: white;
-      padding: 10px 20px;
-      font-size: 20px;
-      border-radius: 20px;
-      z-index: 100;
-      white-space: nowrap;
-      font-family: sans-serif;
-      border: 2px solid white;
+    /* UI 介面 (分數) - 必須反向轉回來因為 canvas 被翻轉了 */
+    #ui-layer {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      display: flex;
+      justify-content: center;
+    }
+    
+    #score-board {
+      margin-top: 20px;
+      padding: 10px 30px;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 50px;
+      font-size: 24px;
+      font-weight: bold;
+      color: #333;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      z-index: 10;
     }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <div id="status-box">初始化相機中...</div>
-  
   <video id="input_video" playsinline autoplay muted></video>
   <canvas id="output_canvas"></canvas>
+  
+  <div id="ui-layer">
+    <div id="score-board">Score: 0</div>
+  </div>
 </div>
 
 <script>
   const videoElement = document.getElementById('input_video');
   const canvasElement = document.getElementById('output_canvas');
   const canvasCtx = canvasElement.getContext('2d');
-  const statusBox = document.getElementById('status-box');
+  const scoreBoard = document.getElementById('score-board');
 
-  // 手勢判斷邏輯
+  // === 遊戲變數 ===
+  let score = 0;
+  let gameObjects = []; // 存放掉落物
+  let lastSpawnTime = 0;
+  let basketPosition = { x: 0.5, y: 0.8 }; // 籃子位置 (0.0 ~ 1.0)
+  let isBasketOpen = true; // 手勢狀態
+  
+  // === 手勢判斷 ===
   function detectGesture(landmarks) {
-    let fingersUp = [false, false, false, false, false];
+    let fingersUp = 0;
+    // 簡單判斷四根手指是否伸直
+    if (landmarks[8].y < landmarks[6].y) fingersUp++;
+    if (landmarks[12].y < landmarks[10].y) fingersUp++;
+    if (landmarks[16].y < landmarks[14].y) fingersUp++;
+    if (landmarks[20].y < landmarks[18].y) fingersUp++;
     
-    // 判斷手指是否伸直 (y軸比較)
-    if (landmarks[8].y < landmarks[6].y) fingersUp[1] = true;  // 食指
-    if (landmarks[12].y < landmarks[10].y) fingersUp[2] = true; // 中指
-    if (landmarks[16].y < landmarks[14].y) fingersUp[3] = true; // 無名指
-    if (landmarks[20].y < landmarks[18].y) fingersUp[4] = true; // 小指
-    
-    // 拇指判斷 (x軸比較，依賴鏡像與否，這裡做簡單判定)
-    // 如果拇指尖端比關節更遠離手掌中心
-    if (Math.abs(landmarks[4].x - landmarks[9].x) > Math.abs(landmarks[3].x - landmarks[9].x)) {
-        fingersUp[0] = true;
-    }
-
-    const upCount = fingersUp.filter(isUp => isUp).length;
-
-    if (upCount >= 4) return "🖐️ 布 (接球模式)";
-    if (upCount <= 1) return "✊ 石頭 (防禦模式)";
-    if (fingersUp[1] && fingersUp[2] && !fingersUp[3] && !fingersUp[4]) return "✌️ 勝利 (拍照)";
-    
-    return "✋ 手勢偵測中...";
+    // 如果大於 3 根手指伸直 -> 布 (籃子打開)
+    if (fingersUp >= 3) return "PAPER";
+    // 否則 -> 石頭 (籃子關閉)
+    return "ROCK";
   }
 
-  function onResults(results) {
-    statusBox.innerText = "請把手放在鏡頭前";
+  // === 遊戲邏輯 ===
+  function updateGame(width, height) {
+    const now = Date.now();
     
-    // 設定 Canvas 大小跟隨 Video
-    canvasElement.width = videoElement.videoWidth;
-    canvasElement.height = videoElement.videoHeight;
-    
-    canvasCtx.save();
-    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-    
-    // 繪製相機畫面
-    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+    // 1. 生成掉落物 (每 1 秒一顆)
+    if (now - lastSpawnTime > 1000) {
+      const type = Math.random() > 0.3 ? 'bird' : 'bomb'; // 70% 是鳥
+      gameObjects.push({
+        x: Math.random(), // 0.0 ~ 1.0
+        y: -0.1,          // 從頂部上方開始
+        type: type,
+        speed: 0.005 + Math.random() * 0.005, // 隨機速度
+        active: true
+      });
+      lastSpawnTime = now;
+    }
 
-    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-      for (const landmarks of results.multiHandLandmarks) {
-        // 畫出骨架
-        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
-        drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
+    // 2. 更新與繪製掉落物
+    for (let i = 0; i < gameObjects.length; i++) {
+      let obj = gameObjects[i];
+      if (!obj.active) continue;
+
+      // 移動
+      obj.y += obj.speed;
+
+      // 繪製
+      const screenX = obj.x * width;
+      const screenY = obj.y * height;
+      
+      canvasCtx.font = "40px Arial";
+      canvasCtx.textAlign = "center";
+      canvasCtx.textBaseline = "middle";
+      
+      if (obj.type === 'bird') {
+        canvasCtx.fillText("🐦", screenX, screenY);
+      } else {
+        canvasCtx.fillText("💣", screenX, screenY);
+      }
+
+      // 3. 碰撞判定 (接住)
+      // 只有當「籃子打開 (Paper)」且「距離夠近」才算接住
+      if (isBasketOpen) {
+        // 計算距離 (簡單的圓形判定)
+        const distX = Math.abs(obj.x - basketPosition.x);
+        const distY = Math.abs(obj.y - basketPosition.y);
         
-        // 判斷手勢
-        const gestureText = detectGesture(landmarks);
-        statusBox.innerText = gestureText;
-        
-        // 變色回饋
-        if (gestureText.includes("布")) statusBox.style.borderColor = "#00FF00"; // 綠
-        else if (gestureText.includes("石頭")) statusBox.style.borderColor = "red"; // 紅
-        else statusBox.style.borderColor = "white";
+        // 判定範圍 (根據螢幕比例調整)
+        if (distX < 0.1 && distY < 0.05) {
+          if (obj.type === 'bird') {
+            score += 10;
+            showEffect(screenX, screenY, "+10", "green");
+          } else {
+            score -= 20;
+            showEffect(screenX, screenY, "-20", "red");
+          }
+          obj.active = false; // 消失
+          scoreBoard.innerText = "Score: " + score;
+          
+          // 分數變色
+          if(score < 0) scoreBoard.style.color = "red";
+          else scoreBoard.style.color = "#333";
+        }
+      }
+
+      // 4. 超出邊界移除
+      if (obj.y > 1.1) {
+        obj.active = false;
       }
     }
+    
+    // 清理無效物件
+    gameObjects = gameObjects.filter(obj => obj.active);
+  }
+
+  // === 特效文字 (暫時性) ===
+  let effects = [];
+  function showEffect(x, y, text, color) {
+    effects.push({x, y, text, color, life: 30});
+  }
+  function drawEffects() {
+    for (let i = 0; i < effects.length; i++) {
+      let e = effects[i];
+      if (e.life > 0) {
+        canvasCtx.fillStyle = e.color;
+        canvasCtx.font = "bold 30px Arial";
+        canvasCtx.fillText(e.text, e.x, e.y);
+        e.y -= 2; // 往上飄
+        e.life--;
+      }
+    }
+    effects = effects.filter(e => e.life > 0);
+  }
+
+  // === MediaPipe 主循環 ===
+  function onResults(results) {
+    // 1. 設定畫布
+    canvasElement.width = videoElement.videoWidth;
+    canvasElement.height = videoElement.videoHeight;
+    const w = canvasElement.width;
+    const h = canvasElement.height;
+
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, w, h);
+    
+    // 2. 繪製背景影片
+    canvasCtx.drawImage(results.image, 0, 0, w, h);
+
+    // 3. 處理手部偵測
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      const landmarks = results.multiHandLandmarks[0]; // 只取第一隻手
+      
+      // 繪製骨架
+      drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+      drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1});
+
+      // 取得手勢
+      const gesture = detectGesture(landmarks);
+      isBasketOpen = (gesture === "PAPER");
+
+      // 更新籃子位置 (使用中指根部 landmarks[9] 作為中心)
+      basketPosition.x = landmarks[9].x;
+      basketPosition.y = landmarks[9].y;
+
+      // 繪製籃子 (跟隨手部)
+      const basketX = basketPosition.x * w;
+      const basketY = basketPosition.y * h;
+      
+      canvasCtx.font = "80px Arial";
+      canvasCtx.textAlign = "center";
+      canvasCtx.textBaseline = "middle";
+      
+      if (isBasketOpen) {
+        canvasCtx.fillText("🧺", basketX, basketY - 50); // 籃子在手上方一點
+      } else {
+        canvasCtx.fillText("👊", basketX, basketY - 50); // 握拳圖示
+      }
+    }
+
+    // 4. 執行遊戲迴圈
+    updateGame(w, h);
+    drawEffects();
+
     canvasCtx.restore();
   }
 
-  const hands = new Hands({locateFile: (file) => {
-    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-  }});
-
+  // === 啟動 ===
+  const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
   hands.setOptions({
     maxNumHands: 1,
     modelComplexity: 1,
     minDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5
   });
-
   hands.onResults(onResults);
 
-  // 啟動相機
   const camera = new Camera(videoElement, {
-    onFrame: async () => {
-      await hands.send({image: videoElement});
-    },
-    width: 1280,
-    height: 720,
-    facingMode: 'user' // 強制使用前鏡頭
+    onFrame: async () => { await hands.send({image: videoElement}); },
+    width: 1280, height: 720, facingMode: 'user'
   });
-  
-  camera.start()
-    .then(() => {
-      console.log("相機啟動成功");
-    })
-    .catch((err) => {
-      console.error("相機啟動失敗", err);
-      statusBox.innerText = "相機啟動失敗: " + err;
-    });
-</script>
+  camera.start();
 
+</script>
 </body>
 </html>
