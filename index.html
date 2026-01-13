@@ -14,64 +14,28 @@
 
   <style>
     body { margin: 0; background: #222; overflow: hidden; font-family: 'Fredoka One', cursive; }
-    
-    /* 遊戲容器 (預設隱藏，按開始後才顯示) */
-    #game-container { 
-      position: relative; width: 100vw; height: 100vh; 
-      display: none; /* 預設隱藏 */
-    }
-    
+    #game-container { position: relative; width: 100vw; height: 100vh; display: none; }
     video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: 0; }
     canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-    
     #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; justify-content: center; align-items: flex-start; }
-    
     #score-board {
       margin-top: 15px; padding: 10px 25px; background: rgba(255, 248, 220, 0.8); backdrop-filter: blur(5px); border-radius: 30px;
       font-size: 24px; color: #d35400; border: 3px solid #f1c40f; box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 10;
     }
-    
     #error-log { position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(200, 0, 0, 0.9); color: white; font-size: 16px; padding: 15px; display: none; z-index: 9999; }
-
-    /* === 新增：開始畫面樣式 === */
     #start-screen {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-      background-color: #87CEEB; /* 天空藍備用色 */
-      background-image: url('./background.png'); /* 使用你的背景圖 */
-      background-size: cover; background-position: center;
-      display: flex; flex-direction: column; justify-content: center; align-items: center;
-      z-index: 20;
+      background-color: #87CEEB; background-image: url('./background.png'); background-size: cover; background-position: center;
+      display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20;
     }
-
-    /* 半透明白色遮罩，讓文字清楚一點 */
-    .overlay {
-      background: rgba(255, 255, 255, 0.85);
-      padding: 40px; border-radius: 30px;
-      text-align: center;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-      max-width: 80%;
-    }
-
+    .overlay { background: rgba(255, 255, 255, 0.85); padding: 40px; border-radius: 30px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.2); max-width: 80%; }
     h1 { color: #d35400; font-size: 40px; margin-bottom: 10px; text-shadow: 2px 2px 0px #f1c40f; }
     p { color: #555; font-size: 18px; line-height: 1.6; font-family: sans-serif; }
-    
-    .icon-guide { font-size: 40px; margin: 20px 0; }
-
-    /* 開始按鈕特效 */
+    .icon-guide { font-size: 30px; margin: 20px 0; text-align: left; display: inline-block; }
     #start-btn {
-      background: linear-gradient(to bottom, #f1c40f, #f39c12);
-      border: none; border-radius: 50px;
-      padding: 15px 50px; color: white; font-size: 28px;
-      font-family: 'Fredoka One', cursive;
-      cursor: pointer; box-shadow: 0 6px 0 #d35400, 0 10px 10px rgba(0,0,0,0.2);
-      transition: transform 0.1s, box-shadow 0.1s;
-      margin-top: 20px;
+      background: linear-gradient(to bottom, #f1c40f, #f39c12); border: none; border-radius: 50px; padding: 15px 50px; color: white; font-size: 28px; font-family: 'Fredoka One', cursive; cursor: pointer; box-shadow: 0 6px 0 #d35400, 0 10px 10px rgba(0,0,0,0.2); transition: transform 0.1s, box-shadow 0.1s; margin-top: 20px;
     }
-    #start-btn:active {
-      transform: translateY(4px);
-      box-shadow: 0 2px 0 #d35400, 0 4px 4px rgba(0,0,0,0.2);
-    }
-
+    #start-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #d35400, 0 4px 4px rgba(0,0,0,0.2); }
   </style>
 </head>
 <body>
@@ -79,14 +43,13 @@
   <div id="start-screen">
     <div class="overlay">
       <h1>EASTER EGG<br>HUNT</h1>
-      <p>Move your hand to catch eggs!</p>
       
       <div class="icon-guide">
-        🖐️ = 🧺<br>
+        🖐️ Paper = Catch Egg (+10)<br>
+        ✊ Rock = Smash Rock (+5)<br>
+        <span style="font-size: 16px; color: red;">(Don't smash eggs!)</span>
       </div>
       
-      <p style="font-size: 14px; color: #888;">(Show "Paper" to be basket)</p>
-
       <button id="start-btn" onclick="startGame()">START</button>
     </div>
   </div>
@@ -104,6 +67,9 @@
   // === 圖片載入 ===
   const bgImg = new Image(); bgImg.src = './background.png'; 
   const basketImg = new Image(); basketImg.src = './my_basket.png';
+  
+  // 新增：槌子圖片
+  const hammerImg = new Image(); hammerImg.src = './hammer.png';
 
   const eggFiles = ['./egg1.png', './egg2.png', './egg3.png'];
   const eggImages = [];
@@ -123,30 +89,19 @@
   let lastSpawnTime = 0;
   let lastSpawnX = 0.5; 
   let basketPosition = { x: 0.5, y: 0.8 };
-  let isBasketOpen = true; 
-  let isGameRunning = false; // 控制遊戲是否開始
+  let isBasketOpen = true; // true=Basket, false=Hammer
+  let isGameRunning = false; 
 
-  // === 點擊開始按鈕後執行的函數 ===
   function startGame() {
-    // 隱藏開始畫面
     document.getElementById('start-screen').style.display = 'none';
-    // 顯示遊戲畫面
     document.getElementById('game-container').style.display = 'block';
-    
-    // 啟動相機 (現在才開始要權限)
-    camera.start().then(() => { 
-      console.log("Camera started"); 
-      isGameRunning = true; // 標記遊戲開始
-    }).catch(err => { 
-      logError("Camera Failed: " + err); 
-    });
+    camera.start().then(() => { isGameRunning = true; }).catch(err => { logError("Camera Failed: " + err); });
   }
 
   function drawBackground(width, height) {
     canvasCtx.save();
     if (bgImg.complete && bgImg.naturalHeight !== 0) {
-      canvasCtx.translate(width, 0);
-      canvasCtx.scale(-1, 1);
+      canvasCtx.translate(width, 0); canvasCtx.scale(-1, 1);
       canvasCtx.drawImage(bgImg, 0, 0, width, height);
     }
     canvasCtx.restore();
@@ -162,17 +117,13 @@
   }
 
   function updateGame(width, height) {
-    // 如果遊戲還沒開始，就不執行掉落邏輯
     if (!isGameRunning) return;
 
     const now = Date.now();
     if (now - lastSpawnTime > 1300) { 
       const type = Math.random() > 0.3 ? 'egg' : 'bomb'; 
       let newX = Math.random();
-      for(let k=0; k<5; k++) { 
-        if (Math.abs(newX - lastSpawnX) > 0.35) { break; }
-        newX = Math.random();
-      }
+      for(let k=0; k<5; k++) { if (Math.abs(newX - lastSpawnX) > 0.35) { break; } newX = Math.random(); }
       lastSpawnX = newX; 
       const speed = 0.01 + Math.random() * 0.015; 
       
@@ -191,42 +142,45 @@
       const screenX = obj.x * width; const screenY = obj.y * height;
       const baseSize = 80;
 
-      canvasCtx.save(); 
-      canvasCtx.translate(screenX, screenY); 
-      canvasCtx.scale(-1, 1); 
+      canvasCtx.save(); canvasCtx.translate(screenX, screenY); canvasCtx.scale(-1, 1); 
+      let imgToDraw = (obj.type === 'egg') ? eggImages[obj.imgIdx] : rockImages[obj.imgIdx];
       
-      let imgToDraw = null;
-      let fallbackEmoji = "";
-
-      if (obj.type === 'egg') {
-        imgToDraw = eggImages[obj.imgIdx]; fallbackEmoji = "🥚";
-      } else {
-        imgToDraw = rockImages[obj.imgIdx]; fallbackEmoji = "🪨";
-      }
-
       if (imgToDraw && imgToDraw.complete && imgToDraw.naturalHeight !== 0) {
           const ratio = imgToDraw.naturalHeight / imgToDraw.naturalWidth;
-          const drawHeight = baseSize * ratio;
-          canvasCtx.drawImage(imgToDraw, -baseSize/2, -drawHeight/2, baseSize, drawHeight);
+          canvasCtx.drawImage(imgToDraw, -baseSize/2, -(baseSize*ratio)/2, baseSize, baseSize*ratio);
       } else {
           canvasCtx.font = "60px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle";
-          canvasCtx.fillText(fallbackEmoji, 0, 0);
+          canvasCtx.fillText(obj.type === 'egg' ? "🥚" : "🪨", 0, 0);
       }
       canvasCtx.restore(); 
 
-      if (isBasketOpen) {
-        const distX = Math.abs(obj.x - basketPosition.x); const distY = Math.abs(obj.y - basketPosition.y);
-        if (distX < 0.12 && distY < 0.08) {
+      // === 碰撞判定核心邏輯 ===
+      const distX = Math.abs(obj.x - basketPosition.x);
+      const distY = Math.abs(obj.y - basketPosition.y);
+      const hit = (distX < 0.12 && distY < 0.08);
+
+      if (hit) {
+        if (isBasketOpen) {
+          // --- 模式：籃子 (接) ---
           if (obj.type === 'egg') {
-            score += 10; showEffect(screenX, screenY, "+10", "#FFD700");
+            score += 10; showEffect(screenX, screenY, "+10", "#FFD700"); // 成功接蛋
           } else {
-            score -= 20; showEffect(screenX, screenY, "-20", "#FF0000"); 
+            score -= 20; showEffect(screenX, screenY, "Ouch!", "#FF0000"); // 籃子被石頭砸
           }
-          obj.active = false;
-          scoreBoard.innerText = "Score: " + score;
-          scoreBoard.style.color = (score < 0) ? "red" : "#d35400";
+        } else {
+          // --- 模式：槌子 (打) ---
+          if (obj.type === 'egg') {
+            score -= 10; showEffect(screenX, screenY, "Broken!", "#FF0000"); // 打碎了蛋
+          } else {
+            score += 5; showEffect(screenX, screenY, "Smash!", "#00FF00"); // 打碎石頭
+          }
         }
+        
+        obj.active = false; // 無論如何，碰到就消失
+        scoreBoard.innerText = "Score: " + score;
+        scoreBoard.style.color = (score < 0) ? "red" : "#d35400";
       }
+
       if (obj.y > 1.1) obj.active = false;
     }
     gameObjects = gameObjects.filter(obj => obj.active);
@@ -238,7 +192,7 @@
     for (let i = 0; i < effects.length; i++) {
       let e = effects[i];
       if (e.life > 0) {
-        canvasCtx.fillStyle = e.color; canvasCtx.strokeStyle = "white"; canvasCtx.lineWidth = 2; canvasCtx.font = "bold 45px Arial";
+        canvasCtx.fillStyle = e.color; canvasCtx.strokeStyle = "white"; canvasCtx.lineWidth = 2; canvasCtx.font = "bold 40px Arial";
         canvasCtx.save(); canvasCtx.translate(e.x, e.y); canvasCtx.scale(-1, 1); 
         canvasCtx.strokeText(e.text, 0, 0); canvasCtx.fillText(e.text, 0, 0);
         canvasCtx.restore(); e.y -= 3; e.life--;
@@ -256,29 +210,38 @@
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, w, h);
       canvasCtx.drawImage(results.image, 0, 0, w, h);
-      drawBackground(w, h); // 永遠都畫背景
+      drawBackground(w, h);
 
       if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         const landmarks = results.multiHandLandmarks[0];
         const gesture = detectGesture(landmarks);
-        isBasketOpen = (gesture === "PAPER");
+        isBasketOpen = (gesture === "PAPER"); // 布=籃子，石頭=槌子
+        
         basketPosition.x = landmarks[9].x; basketPosition.y = landmarks[9].y;
-        const basketX = basketPosition.x * w; const basketY = basketPosition.y * h;
-        const basketWidth = 130; 
+        const pX = basketPosition.x * w; const pY = basketPosition.y * h;
+        const size = 130; 
 
+        canvasCtx.save(); canvasCtx.translate(pX, pY - 50); canvasCtx.scale(-1, 1); 
+        
         if (isBasketOpen) {
-          canvasCtx.save(); 
-          canvasCtx.translate(basketX, basketY - 50); 
-          canvasCtx.scale(-1, 1); 
+          // 畫籃子
           if (basketImg.complete && basketImg.naturalHeight !== 0) {
-             const bRatio = basketImg.naturalHeight / basketImg.naturalWidth;
-             const bHeight = basketWidth * bRatio;
-             canvasCtx.drawImage(basketImg, -basketWidth/2, -bHeight/2, basketWidth, bHeight);
+             const ratio = basketImg.naturalHeight / basketImg.naturalWidth;
+             canvasCtx.drawImage(basketImg, -size/2, -(size*ratio)/2, size, size*ratio);
           } else {
              canvasCtx.font = "100px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle"; canvasCtx.fillText("🧺", 0, 0); 
           }
-          canvasCtx.restore();
-        } 
+        } else {
+          // 畫槌子 (如果沒圖就顯示拳頭)
+          if (hammerImg.complete && hammerImg.naturalHeight !== 0) {
+             const ratio = hammerImg.naturalHeight / hammerImg.naturalWidth;
+             canvasCtx.drawImage(hammerImg, -size/2, -(size*ratio)/2, size, size*ratio);
+          } else {
+             canvasCtx.font = "100px Arial"; canvasCtx.textAlign = "center"; canvasCtx.textBaseline = "middle"; canvasCtx.fillText("✊", 0, 0); 
+          }
+        }
+        canvasCtx.restore();
+        
       } else {
          scoreBoard.innerText = "Show Your Hand";
       }
@@ -294,11 +257,10 @@
   hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
   hands.onResults(onResults);
   const camera = new Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width: 1280, height: 720, facingMode: 'user' });
-  
-  // 注意：這裡移除了 camera.start()，因為它被搬到 startGame() 裡面了
 
 </script>
 </body>
 </html>
+
 
 
