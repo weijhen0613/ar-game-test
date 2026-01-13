@@ -30,7 +30,17 @@
       background-color: #87CEEB; background-image: url('./background.png'); background-size: cover; background-position: center;
       display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20;
     }
-    .overlay { background: rgba(255, 255, 255, 0.9); padding: 30px; border-radius: 30px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.3); max-width: 85%; }
+   .overlay {
+  background: rgba(255, 255, 255, 0.9);
+  padding: 30px;
+  border-radius: 30px;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  
+  /* === 關鍵修改在這裡 === */
+  width: 85%;        /* 強制寬度只佔 85%，左右就會有空隙 */
+  max-width: 400px;  /* 限制最大寬度，避免在電腦上看起來變得超巨大 */
+}
     
     h1 { color: #d35400; font-size: 36px; margin-bottom: 5px; text-shadow: 2px 2px 0px #f1c40f; line-height: 1.2; }
     
@@ -267,4 +277,5 @@
 </script>
 </body>
 </html>
+
 
