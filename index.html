@@ -1,118 +1,142 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AR 魔法融合 - 幾何測試版</title>
-    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-aframe.prod.js"></script>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>手勢識別測試 - MediaPipe</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  
+  <style>
+    body { margin: 0; background: black; overflow: hidden; }
+    /* 讓影片和畫布疊在一起 */
+    .container { position: relative; width: 100vw; height: 100vh; }
+    video { position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); } /* 鏡像翻轉 */
+    canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
     
-    <script>
-      AFRAME.registerComponent('fusion-logic', {
-        init: function() {
-          this.fireTarget = document.querySelector('#target-fire');
-          this.waterTarget = document.querySelector('#target-water');
-          
-          // 抓取幾何圖形實體
-          this.fireShape = document.querySelector('#shape-fire');
-          this.waterShape = document.querySelector('#shape-water');
-          this.steamShape = document.querySelector('#shape-steam');
-          
-          this.debugText = document.querySelector('#debug-text');
+    /* 顯示手勢結果的文字框 */
+    #status-box {
+      position: absolute;
+      top: 20px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.7);
+      color: #00FF00;
+      padding: 10px 20px;
+      font-size: 24px;
+      border-radius: 10px;
+      z-index: 10;
+      font-family: sans-serif;
+    }
+  </style>
+</head>
+<body>
 
-          this.fireVisible = false;
-          this.waterVisible = false;
+<div class="container">
+  <div id="status-box">請舉起手...</div>
+  <video id="input_video"></video>
+  <canvas id="output_canvas"></canvas>
+</div>
 
-          // 綁定事件
-          this.fireTarget.addEventListener("targetFound", () => { 
-            this.fireVisible = true; 
-            this.updateDebugText("發現：火");
-          });
-          this.fireTarget.addEventListener("targetLost", () => { 
-            this.fireVisible = false; 
-            this.resetDisplay();
-            this.updateDebugText("火消失");
-          });
-          
-          this.waterTarget.addEventListener("targetFound", () => { 
-            this.waterVisible = true; 
-            this.updateDebugText("發現：水");
-          });
-          this.waterTarget.addEventListener("targetLost", () => { 
-            this.waterVisible = false; 
-            this.resetDisplay();
-            this.updateDebugText("水消失");
-          });
-        },
+<script>
+  const videoElement = document.getElementById('input_video');
+  const canvasElement = document.getElementById('output_canvas');
+  const canvasCtx = canvasElement.getContext('2d');
+  const statusBox = document.getElementById('status-box');
 
-        tick: function() {
-          if (this.fireVisible && this.waterVisible) {
-            const firePos = new THREE.Vector3();
-            const waterPos = new THREE.Vector3();
-            
-            this.fireTarget.object3D.getWorldPosition(firePos);
-            this.waterTarget.object3D.getWorldPosition(waterPos);
+  // === 手勢判斷邏輯 ===
+  function detectGesture(landmarks) {
+    // MediaPipe 手指點位索引：
+    // 0: 手腕, 4: 拇指尖, 8: 食指尖, 12: 中指尖, 16: 無名指尖, 20: 小指尖
+    
+    // 簡單判斷：手指是伸直還是彎曲？
+    // 邏輯：比較「指尖 (Tip)」和「第二關節 (Pip)」的 Y 軸位置
+    // 注意：在螢幕座標中，Y 越小代表越上面
+    
+    let fingersUp = [false, false, false, false, false]; // 拇指, 食指, 中指, 無名指, 小指
 
-            const distance = firePos.distanceTo(waterPos);
-            this.updateDebugText("距離: " + distance.toFixed(2));
+    // 1. 食指 (8 vs 6)
+    if (landmarks[8].y < landmarks[6].y) fingersUp[1] = true;
+    // 2. 中指 (12 vs 10)
+    if (landmarks[12].y < landmarks[10].y) fingersUp[2] = true;
+    // 3. 無名指 (16 vs 14)
+    if (landmarks[16].y < landmarks[14].y) fingersUp[3] = true;
+    // 4. 小指 (20 vs 18)
+    if (landmarks[20].y < landmarks[18].y) fingersUp[4] = true;
 
-            // 距離判斷
-            if (distance < 0.8) {
-              // 隱藏原本的紅色圓和藍色圓
-              this.fireShape.setAttribute('visible', false);
-              this.waterShape.setAttribute('visible', false);
-              
-              // 顯示中間的白色球
-              this.steamShape.setAttribute('visible', true);
-              
-              // 移動白色球到中間
-              const midPos = new THREE.Vector3().addVectors(firePos, waterPos).multiplyScalar(0.5);
-              this.steamShape.object3D.position.copy(midPos);
-              
-              // 讓球變大變小呼吸效果 (模擬蒸氣)
-              const scale = 1 + Math.sin(Date.now() / 200) * 0.2;
-              this.steamShape.object3D.scale.set(scale, scale, scale);
+    // 5. 拇指 (比較特別，因為它是往側邊動，我們比對 X 軸)
+    // 這裡做簡單判斷：拇指尖是否比指節更遠離手掌中心
+    if (landmarks[4].x < landmarks[3].x) fingersUp[0] = true; // 右手邏輯 (鏡像後可能要調整)
 
-            } else {
-              this.resetDisplay();
-            }
-          }
-        },
+    // 計算有幾根手指伸直
+    const upCount = fingersUp.filter(isUp => isUp).length;
 
-        resetDisplay: function() {
-          this.fireShape.setAttribute('visible', true);
-          this.waterShape.setAttribute('visible', true);
-          this.steamShape.setAttribute('visible', false);
-        },
+    // === 判定結果 ===
+    if (upCount >= 4) {
+      return "🖐️ 布 (Paper) - 接住！";
+    } else if (upCount == 0 || upCount == 1) {
+      return "✊ 石頭 (Rock) - 沒接住";
+    } else if (fingersUp[1] && fingersUp[2] && !fingersUp[3] && !fingersUp[4]) {
+      return "✌️ 勝利 (Scissors)";
+    } else {
+      return "🤔 辨識中...";
+    }
+  }
 
-        updateDebugText: function(msg) {
-          if (this.debugText) this.debugText.setAttribute('value', msg);
-        }
-      });
-    </script>
-  </head>
-  <body>
-    <a-scene mindar-image="imageTargetSrc: ./targets.mind; maxTrack: 2" 
-             color-space="sRGB" 
-             renderer="colorManagement: true, physicallyCorrectLights" 
-             vr-mode-ui="enabled: false" 
-             device-orientation-permission-ui="enabled: false">
-      
-      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+  // === MediaPipe 設定 ===
+  function onResults(results) {
+    // 設定畫布大小
+    canvasElement.width = videoElement.videoWidth;
+    canvasElement.height = videoElement.videoHeight;
+    
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    
+    // 繪製相機畫面
+    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-      <a-entity id="debug-text" position="0 1.2 -1.5" text="value: Ready; color: red; align: center; width: 4; background: white"></a-entity>
+    if (results.multiHandLandmarks) {
+      for (const landmarks of results.multiHandLandmarks) {
+        // 1. 畫出骨架
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
+        drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
+        
+        // 2. 進行手勢比對
+        const gesture = detectGesture(landmarks);
+        statusBox.innerText = gesture;
+        
+        // 如果偵測到「布」，文字變綠色；「石頭」變紅色
+        if (gesture.includes("布")) statusBox.style.color = "#00FF00";
+        else if (gesture.includes("石頭")) statusBox.style.color = "red";
+      }
+    }
+    canvasCtx.restore();
+  }
 
-      <a-entity fusion-logic></a-entity>
+  const hands = new Hands({locateFile: (file) => {
+    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+  }});
 
-      <a-entity id="target-fire" mindar-image-target="targetIndex: 0">
-        <a-circle id="shape-fire" color="red" radius="0.4" position="0 0 0" rotation="-90 0 0"></a-circle>
-      </a-entity>
+  hands.setOptions({
+    maxNumHands: 1, // 只偵測一隻手
+    modelComplexity: 1,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
 
-      <a-entity id="target-water" mindar-image-target="targetIndex: 1">
-        <a-circle id="shape-water" color="blue" radius="0.4" position="0 0 0" rotation="-90 0 0"></a-circle>
-      </a-entity>
+  hands.onResults(onResults);
 
-      <a-sphere id="shape-steam" color="white" opacity="0.8" radius="0.5" visible="false"></a-sphere>
+  const camera = new Camera(videoElement, {
+    onFrame: async () => {
+      await hands.send({image: videoElement});
+    },
+    width: 1280,
+    height: 720
+  });
+  camera.start();
+</script>
 
-    </a-scene>
-  </body>
+</body>
 </html>
